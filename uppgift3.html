@@ -1,0 +1,289 @@
+﻿<!doctype html>
+<html>
+<head>
+    <title>Socket.IO chat</title>
+    <style>
+        *
+        {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body
+        {
+            font: 13px Verdana;
+        }
+
+        form
+        {
+            background: #cccccc;
+            padding: 3px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+
+            form input
+            {
+                border: 0;
+                padding: 5px;
+                width: 75%;
+                margin-right: 0.5%;
+            }
+
+            form button
+            {
+                width: 5%;
+                background: rgb(180, 224, 255);
+                border: 1px solid black;
+                border-radius: 5px;
+                padding: 5px;
+            }
+
+        .user
+        {
+            width: 7%;
+        }
+        #messages
+        {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
+            #messages li
+            {
+                padding: 3px 10px;
+            }
+        .emote
+        {
+            color: magenta;
+            font-weight: bold;
+        }
+        .error
+        {
+            color: black;
+            font-weight: bold;
+        }
+        .positive
+        {
+            color: limegreen;
+            font-weight: bold;
+        }
+        .negative
+        {
+            color: orangered;
+            font-weight: bold;
+        }
+        .info
+        {
+            color: cornflowerblue;
+            font-weight: bold;
+        }
+        .help
+        {
+            color: black;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 2px 10px!important;
+        }
+
+    </style>
+</head>
+<body>
+    <ul id="messages"></ul>
+
+    <form action="">
+        Msg:
+        <input id="m" autocomplete="off" />
+        <button style="width: 4%;">Send</button>
+        Nick:
+        <input id="user" autocomplete="off" class="user" value="Richard" />
+        <button id="connectButton" style="width: 7%;">Disconnected</button>
+    </form>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+    <script>
+        var username = "";
+        var socket;
+        $(function () {
+            socket = io({ autoConnect: false, reconnection : false });
+            $("#connectButton").css("background-color", "orangered");
+            $('form').submit(function (e) {
+                e.preventDefault(); // prevents page reloading
+                let userInput = $('#m').val();
+                if (userInput[0] == '/') { // If a command
+                    let userCmd = "";
+                    let userMsg = "";
+                    let spacePos = userInput.indexOf(' ');
+                    if (spacePos != -1) {
+                        userCmd = userInput.substr(0, (spacePos));
+                        userMsg = userInput.substr(spacePos + 1);
+                    }
+                    else {
+                        userCmd = userInput;
+                    }
+                    if (userCmd == "/me") {
+                        if (onlineCmd) {  // Kör endast om connected
+                            if (userMsg) {
+                                typeEmote(userMsg);
+                                socket.emit('emote', { 'user': $('#user').val(), 'message': userMsg });
+                            }
+                            else {
+                                typeError("Error! Correct syntax is: /me message");
+                            }
+                        }
+                    }
+                    else if (userCmd == "/greet") {
+                        if (onlineCmd) {  // Kör endast om connected
+                            typeEmote("Greetings everyone!");
+                            socket.emit('emote', { 'user': $('#user').val(), 'message': 'greets everyone!' });
+                        }
+                    }
+                    else if (userCmd == "/disconnect") {
+                        if (onlineCmd) {  // Kör endast om connected
+                            disconnect();
+                        }
+                    }
+                    else if (userCmd == "/clear") { 
+                        $("#messages").html("");
+                    }
+                    else if (userCmd == "/nick") {
+                        if (userMsg) {
+                            checkNick(userMsg);
+                        }
+                        else {
+                            typeError("Error! Correct syntax is: /nick newnickname");
+                        }
+                    }
+                    else if (userCmd == "/connect") {
+                        connect();
+                    }
+                    else if (userCmd == "/help") {
+                        typeHelp("Commands:");
+                        typeHelp("/me <message> : Displays an emote.");
+                        typeHelp("/greet : Greets everyone.");
+                        typeHelp("/nick <nickname> : Changes nickname.");
+                        typeHelp("/clear : Clears all messages.");
+                        typeHelp("/connect : Connect to the server.");
+                        typeHelp("/disconnect : Disconnect from the server.");
+                        typeHelp("/help : Displays this help page.");
+                    }
+                    else {
+                        typeError("Error! No such command: " + userCmd);
+                    }
+                }
+                else {  // If a normal message (not a command)
+                    if (userInput > "") {
+                        if (onlineCmd) { // utför endast om connected
+                            typeMsg("<" + $('#user').val() + ">: " + userInput);
+                            socket.emit('message', { 'user': $('#user').val(), 'message': userInput });
+                        }
+                    }
+                }
+                $('#m').val('');
+                return false;
+            });
+            socket.on('message', function (msg) {
+                $('#messages').append($('<li>').text("\<" + msg.user + "\>: " + msg.message));
+            });
+            socket.on('emote', function (msg) {
+                $('#messages').append($("<li class=\"emote\">").text("* " + msg.user + " " + msg.message + " *"));
+            });
+            socket.on('nick', function (msg) {  // Om någon har bytt nick
+                typeInfo(msg.user + " has changed nickname to " + msg.newuser + ".");
+            });
+            socket.on('connected', function (msg) {  // Om någon annan har connectat
+                typeMsg(msg.user + " has connected.");
+            });
+            socket.on('disconnected', function (msg) {  // Om någon annan har disconnectat
+                typeMsg(msg.user + " has disconnected.");
+            });
+            socket.on("connect", function (reason) {  // Om DU har connectat
+                typePositive("You have connected to the server!");
+            })
+            socket.on("disconnect", function (reason) {  // Om DU har disconnectat
+                typeNegative("You have been disconnected from the server!");
+                disconnect();
+            })
+        });
+        $("#connectButton").click(function (e) {
+            e.preventDefault();
+            if (socket.connected) {
+                disconnect();
+            }
+            else {
+                connect();
+            }
+        });
+        $("#user").blur(function () {
+            checkNick($("#user").val());
+        });
+        let disconnect = function () {
+            if (socket.connected) {
+                socket.emit('disconnected', { 'user': $('#user').val() });
+                socket.disconnect();
+            }
+            $("#connectButton").css("background-color", "orangered");
+            $("#connectButton").text("Disconnected");
+        }
+        let connect = function () {
+            username = $('#user').val();
+            if (username == "") {
+                typeError("You need to have a valid nickname.");
+            }
+            else {
+                socket.connect();
+                socket.emit('connected', { 'user': username });
+                $("#connectButton").css("background-color", "lawngreen");
+                $("#connectButton").text("Connected");
+            }
+        }
+        let onlineCmd = function () {
+            if (socket.connected) {
+                return true;
+            }
+            else {
+                typeError("You are not connected to the server.");
+                return false;
+            }
+        }
+        let typeMsg = function (string) {
+            $('#messages').append($("<li>").text(string));
+        }
+        let typeError = function (string) {
+            $('#messages').append($("<li class=\"error\">").text(string));
+        }
+        let typeHelp = function (string) {
+            $('#messages').append($("<li class=\"help\">").text(string));
+        }
+        let typePositive = function (string) {
+            $('#messages').append($("<li class=\"positive\">").text(string));
+        }
+        let typeNegative = function (string) {
+            $('#messages').append($("<li class=\"negative\">").text(string));
+        }
+        let typeInfo = function (string) {
+            $('#messages').append($("<li class=\"info\">").text(string));
+        }
+        let typeEmote = function (string) {
+            $('#messages').append($("<li class=\"emote\">").text("* " + string + " *"));
+        }
+        let checkNick = function (name) {
+            if (/\w/.test(name) == true) {
+                username = name;
+                typeInfo("You have changed nickname into " + username);
+                $("#user").val(username);
+                if (socket.connected) {
+                    socket.emit("nick", { user: username });
+                }
+            }
+            else {
+                typeError("Not an approved nickname. Please use only letters, numbers and underscore _.");
+                $("#user").val(username);
+            }
+        }
+    </script>
+</body>
+</html>
