@@ -30,6 +30,6 @@ io.on('connection', (socket) => {
         socket.broadcast.emit('connected', msg);
     });
 });
-http.listen(3000, () => {
+http.listen(process.env.PORT, () => {
     console.log('listening on *:3000');
 });
